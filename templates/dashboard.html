@@ -102,28 +102,29 @@
     <details class="guide" {% if st == "none" %}open{% endif %}>
       <summary><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>¿Cómo obtengo el token y el ID del pixel?<svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg></summary>
       <div class="body">
-      <p class="muted">en 5 minutos se conecta</p>
+      <p class="muted">Te tomará unos 5 minutos. Ten a la mano el usuario de Facebook con el que manejas tus anuncios.</p>
       <ol>
-        <li>Entra a <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener">business.facebook.com/events_manager2</a>
-          (<b>Administrador de eventos</b>) con el Facebook que administra los anuncios de Red Médica.</li>
-        <li>En la columna de la izquierda, en <b>Orígenes de datos</b>, elige el <b>pixel</b> que usan los anuncios
-          (si hay varios, el que está conectado a la cuenta publicitaria donde se pagan los anuncios).</li>
-        <li><b>ID del pixel:</b> es el número largo que aparece debajo del nombre del pixel (o en la pestaña
-          <b>Configuración</b> → "ID del conjunto de datos"). Cópialo en el campo <i>ID del pixel</i>.</li>
-        <li><b>Token:</b> abre la pestaña <b>Configuración</b>, baja hasta la sección <b>API de conversiones</b> y pulsa
-          <b>Generar token de acceso</b> (puede decir "Configurar de forma manual" → "Generar token").
-          Copia el token completo: Meta lo muestra <b>una sola vez</b>. Pégalo en el campo <i>Token</i>.</li>
-        <li>Pulsa <b>Conectar</b>. Si todo está bien verás "Conectado" con el nombre del pixel.</li>
-        <li><i>(Opcional, mejora la atribución de anuncios de clic a WhatsApp)</i> <b>ID de WhatsApp Business:</b>
-          en <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noopener">Configuración del negocio → Cuentas → Cuentas de WhatsApp</a>,
-          elige la cuenta del número que recibe los leads y copia su <b>Identificador</b>.</li>
-        <li><b>Prueba:</b> en el Administrador de eventos abre la pestaña <b>Probar eventos</b>, copia el código
-          (ej. <code>TEST12345</code>), pégalo en "Código de prueba" (tarjeta 2), pulsa <b>Sincronizar ahora</b> y
-          revisa que llegue el evento <i>Purchase</i>. Después borra el código.</li>
+        <li>Abre <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener">business.facebook.com/events_manager2</a>
+          (se llama <b>Administrador de eventos</b>) e inicia sesión con el Facebook con el que pagas o administras tus anuncios.</li>
+        <li>En la columna de la izquierda, en <b>Orígenes de datos</b>, haz clic en tu <b>pixel</b>.
+          Si te aparecen varios, elige el que está ligado a la cuenta con la que pagas tus anuncios.</li>
+        <li><b>ID del pixel:</b> es el número largo que ves debajo del nombre del pixel (también lo encuentras en la pestaña
+          <b>Configuración</b>, como "ID del conjunto de datos"). Cópialo y pégalo arriba, en el campo <i>ID del pixel</i>.</li>
+        <li><b>Token:</b> entra a la pestaña <b>Configuración</b>, baja hasta la sección <b>API de conversiones</b> y haz clic en
+          <b>Generar token de acceso</b> (en algunas cuentas primero dice "Configurar de forma manual" y luego "Generar token").
+          Copia el token completo, porque Facebook <b>solo lo muestra una vez</b>, y pégalo arriba, en el campo <i>Token</i>.</li>
+        <li>Haz clic en <b>Conectar</b>. Si todo salió bien, verás la palabra "Conectado" junto al nombre de tu pixel.</li>
+        <li><i>(Opcional)</i> <b>ID de WhatsApp Business:</b> sirve para que Facebook sepa qué anuncios de WhatsApp te trajeron ventas.
+          Entra a <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noopener">Configuración del negocio → Cuentas → Cuentas de WhatsApp</a>,
+          elige la cuenta del número donde te escriben tus pacientes y copia su <b>Identificador</b>.</li>
+        <li><b>Comprueba que funciona:</b> en el Administrador de eventos abre la pestaña <b>Probar eventos</b> y copia el código que aparece
+          (algo como <code>TEST12345</code>). Pégalo en <i>Código de prueba de Meta</i>, en la sección
+          <b>Sincronización con Leadsales</b>, guarda y haz clic en <b>Sincronizar ahora</b>. En Facebook deberías ver llegar
+          tus ventas como <i>Purchase</i> (compra). Cuando lo confirmes, borra el código de prueba y guarda de nuevo.</li>
       </ol>
-      <p class="muted">El token solo permite enviar eventos a ese pixel: no da acceso a la cuenta de Facebook, a los anuncios
-        ni a los pagos. No vence; si algún día Meta lo rechaza, el panel lo avisará y basta con generar otro.
-        Los nombres de los botones pueden variar un poco según la versión de Meta.</p>
+      <p class="muted">El token solo sirve para avisarle a Facebook de tus ventas. No da acceso a tu cuenta de Facebook,
+        a tus anuncios ni a tus pagos. No caduca; si algún día Facebook lo rechaza, este panel te avisará y solo tendrás que generar uno nuevo.
+        Los nombres de los botones pueden cambiar un poco según la versión de Facebook.</p>
       </div>
     </details>
   </section>
