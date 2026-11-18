@@ -14,6 +14,11 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+import base64
+
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
@@ -63,7 +68,7 @@ CREATE TABLE IF NOT EXISTS log (
 """
 
 _DEFAULTS = {
-    "facebook": {},  # token, connected_at, expires_at, user_name, dataset_id, dataset_name
+    "facebook": {},  # token_enc (cifrado), token_hint, dataset_id, dataset_name, waba_id, invalid
     "settings": {"test_event_code": "", "enabled": True},
     "last_sync": None,
     "last_sync_result": None,
@@ -115,28 +120,57 @@ def patch(key, **changes):
     return value
 
 
-def fb_status(fb):
-    """Estado de la conexión de Facebook: connected / expired / none, y días restantes.
+# ---------- conexión con Meta (token cifrado) ----------
+class TokenError(Exception):
+    pass
 
-    Vence a los FB_RECONNECT_DAYS desde que se conectó, o antes si Meta da un
-    token con menor duración.
-    """
-    if not fb.get("token"):
-        return {"state": "none", "days_left": None, "expires_at": None}
-    limits = []
-    if fb.get("connected_at"):
-        limits.append(int(fb["connected_at"]) + config.FB_RECONNECT_DAYS * 86400)
-    if fb.get("expires_at"):
-        limits.append(int(fb["expires_at"]))
-    expires_at = min(limits) if limits else None
-    if expires_at is None:
-        return {"state": "connected", "days_left": None, "expires_at": None}
-    left = expires_at - time.time()
-    return {
-        "state": "connected" if left > 0 else "expired",
-        "days_left": max(0, int(left // 86400)),
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(timespec="seconds"),
-    }
+
+def _fernet():
+    """Llave de cifrado derivada de APP_SECRET_KEY (si esa clave cambia, hay que volver a pegar el token)."""
+    if not config.APP_SECRET_KEY:
+        raise TokenError("Falta APP_SECRET_KEY en .env; se necesita para cifrar el token")
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=b"ventas-meta/token/v1",
+               info=b"meta-capi-token").derive(config.APP_SECRET_KEY.encode())
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def save_facebook(token, dataset_id, dataset_name="", waba_id=""):
+    put("facebook", {
+        "token_enc": _fernet().encrypt(token.encode()).decode(),
+        "token_hint": f"…{token[-4:]}",
+        "dataset_id": dataset_id,
+        "dataset_name": dataset_name or dataset_id,
+        "waba_id": waba_id,
+        "connected_at": int(time.time()),
+        "invalid": None,
+    })
+
+
+def facebook():
+    """Datos de conexión sin el token (para mostrar en el panel)."""
+    fb = get("facebook") or {}
+    return {k: v for k, v in fb.items() if k != "token_enc"}
+
+
+def facebook_token():
+    fb = get("facebook") or {}
+    if not fb.get("token_enc"):
+        return None
+    try:
+        return _fernet().decrypt(fb["token_enc"].encode()).decode()
+    except InvalidToken:
+        raise TokenError("No se pudo descifrar el token (¿cambió APP_SECRET_KEY?). Vuelve a pegarlo.")
+
+
+def fb_status(fb):
+    """none = sin token; invalid = Meta lo rechazó; incomplete = falta el pixel; connected."""
+    if not fb.get("token_hint") and not fb.get("token_enc"):
+        return {"state": "none"}
+    if fb.get("invalid"):
+        return {"state": "invalid", "reason": fb["invalid"]}
+    if not fb.get("dataset_id"):
+        return {"state": "incomplete"}
+    return {"state": "connected"}
 
 
 # ---------- ventas / clientes enviados ----------

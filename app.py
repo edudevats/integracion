@@ -1,10 +1,12 @@
-"""Panel: login, conexión con Facebook, clientes enviados y envío de ventas de Leadsales a Meta."""
+"""Panel: login, conexión con Meta (token), clientes enviados y envío de ventas de Leadsales a Meta."""
 import hmac
+import re
 import secrets
 import time
 from datetime import datetime
 from functools import wraps
 
+import requests
 from flask import (Flask, Response, abort, flash, redirect, render_template, request, session,
                    url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -118,14 +120,12 @@ def change_password():
 @app.get("/")
 @login_required
 def dashboard():
-    fb = store.get("facebook")
+    fb = store.facebook()  # sin el token
     return render_template(
         "dashboard.html", fb=fb, fbs=store.fb_status(fb), settings=store.get("settings"),
         last=store.get("last_sync_result"), sales=store.list_sales(limit=10),
         totals=store.sales_totals(), logs=store.recent_logs(30),
-        datasets=session.get("datasets"), missing=config.missing_settings(),
-        daily_label=config.DAILY_RUN_LABEL, reconnect_days=config.FB_RECONNECT_DAYS,
-        waba=bool(config.WHATSAPP_BUSINESS_ACCOUNT_ID))
+        missing=config.missing_settings(), daily_label=config.DAILY_RUN_LABEL)
 
 
 @app.get("/clientes")
@@ -144,74 +144,63 @@ def clients():
                            totals=store.sales_totals())
 
 
-# ---------- Facebook ----------
-@app.post("/facebook/connect")
-@login_required
-def fb_connect():
-    if not config.FB_APP_ID or not config.FB_APP_SECRET:
-        flash("Faltan FB_APP_ID / FB_APP_SECRET en .env", "error")
-        return redirect("/")
-    session["fb_state"] = secrets.token_urlsafe(24)
-    return redirect(meta.login_url(session["fb_state"]))
+# ---------- Meta (token de la API de conversiones) ----------
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-|]{40,}$")
 
 
-@app.get("/facebook/callback")
+@app.post("/meta/connect")
 @login_required
-def fb_callback():
-    if request.args.get("error"):
-        flash(f"Facebook: {request.args.get('error_description') or request.args['error']}", "error")
+def meta_connect():
+    token = re.sub(r"\s+", "", request.form.get("token", ""))
+    dataset_id = request.form.get("dataset_id", "").strip()
+    waba_id = request.form.get("waba_id", "").strip()
+    if not dataset_id.isdigit():
+        flash("El ID del pixel debe ser solo números", "error")
         return redirect("/")
-    state = request.args.get("state", "")
-    if not state or not hmac.compare_digest(state, session.pop("fb_state", "")):
-        abort(400, "Estado de OAuth inválido")
+    if waba_id and not waba_id.isdigit():
+        flash("El ID de WhatsApp Business debe ser solo números (o déjalo vacío)", "error")
+        return redirect("/")
     try:
-        info = meta.exchange_code(request.args.get("code", ""))
-        datasets = meta.list_datasets(info["token"])
-    except meta.MetaError as e:
+        if not token:  # actualizar solo los IDs conservando el token guardado
+            token = store.facebook_token()
+            if not token:
+                flash("Pega el token de acceso", "error")
+                return redirect("/")
+        elif not TOKEN_RE.match(token):
+            flash("Eso no parece un token de Meta. Cópialo completo desde el Administrador de eventos.",
+                  "error")
+            return redirect("/")
+    except store.TokenError as e:
         flash(str(e), "error")
         return redirect("/")
-    prev = store.get("facebook")
-    store.put("facebook", {**info, "dataset_id": prev.get("dataset_id"),
-                           "dataset_name": prev.get("dataset_name")})
-    session["datasets"] = datasets
-    store.log("info", f"Facebook conectado como {info['user_name']}")
-    flash(f"Conectado como {info['user_name']}. Revisa que el pixel/dataset sea el correcto.", "ok")
-    return redirect("/")
 
-
-@app.post("/facebook/datasets/refresh")
-@login_required
-def fb_refresh_datasets():
-    fb = store.get("facebook")
-    if store.fb_status(fb)["state"] != "connected":
-        flash("Primero conecta Facebook", "error")
-    else:
-        session["datasets"] = meta.list_datasets(fb["token"])
-        if not session["datasets"]:
-            flash("No encontré píxeles con este usuario. Puedes escribir el ID a mano.", "error")
-    return redirect("/")
-
-
-@app.post("/facebook/dataset")
-@login_required
-def fb_dataset():
-    ds_id = request.form.get("dataset_id", "").strip()
-    if not ds_id.isdigit():
-        flash("El ID del pixel/dataset debe ser numérico", "error")
+    name, warning = dataset_id, None
+    try:
+        name = meta.verify_dataset(token, dataset_id)
+    except meta.MetaError as e:
+        if e.code in (102, 190):  # token inválido o vencido
+            flash(f"Meta rechazó el token: {e}", "error")
+            return redirect("/")
+        warning = f"No pude confirmar el pixel con Meta ({e}). Usa 'Probar eventos' para verificar."
+    except requests.RequestException as e:
+        warning = f"No pude comunicarme con Meta para verificar ({e}). Usa 'Probar eventos'."
+    try:
+        store.save_facebook(token, dataset_id, name, waba_id)
+    except store.TokenError as e:
+        flash(str(e), "error")
         return redirect("/")
-    names = {d["id"]: d["name"] for d in session.get("datasets") or []}
-    store.patch("facebook", dataset_id=ds_id, dataset_name=names.get(ds_id, ds_id))
-    store.log("info", f"Pixel/dataset seleccionado: {names.get(ds_id, ds_id)}")
-    flash("Pixel/dataset guardado", "ok")
+    store.log("info", f"Meta conectado al pixel {name} ({dataset_id})",
+              detail=f"WhatsApp Business: {waba_id or 'no'}")
+    flash(warning or f"Conectado al pixel {name}", "error" if warning else "ok")
     return redirect("/")
 
 
-@app.post("/facebook/disconnect")
+@app.post("/meta/disconnect")
 @login_required
-def fb_disconnect():
+def meta_disconnect():
     store.put("facebook", {})
-    session.pop("datasets", None)
-    store.log("info", "Facebook desconectado")
+    store.log("info", "Conexión con Meta eliminada (token borrado de la base)")
+    flash("Se borró el token de Meta", "ok")
     return redirect("/")
 
 

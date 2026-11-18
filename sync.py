@@ -116,7 +116,7 @@ def send_sale(lead, sale, contact, fb, settings):
     event = meta.build_purchase_event(
         event_id=f"leadsales-sale-{sale_id}", event_time=event_time, value=amount,
         currency=sale.get("currency"), contact=contact, content_name=sale.get("what_sold"),
-        external_id=lead_id, order_id=sale_id)
+        external_id=lead_id, order_id=sale_id, waba_id=fb.get("waba_id"))
     record = {
         "lead_id": lead_id, "client_name": contact.get("name") or contact.get("phone"),
         "phone": str(contact.get("phone") or ""), "email": contact.get("email") or "",
@@ -133,18 +133,43 @@ def send_sale(lead, sale, contact, fb, settings):
               or event["user_data"].get("ctwa_clid")):
         record.update(status="omitido", detail="El lead no tiene teléfono ni email")
     else:
+        auth_error = None
         try:
             resp = meta.send_events(fb["dataset_id"], fb["token"], [event],
                                     settings.get("test_event_code", ""))
-            record.update(status="enviado", detail=f"events_received={resp.get('events_received')}",
-                          fbtrace_id=resp.get("fbtrace_id"))
-        except (meta.MetaError, requests.RequestException) as e:
+            record.update(status="enviado", detail=f"events_received={resp.get('events_received')}")
+        except meta.MetaError as e:
             record.update(status="error", detail=str(e))
+            auth_error = e if e.is_auth else None
+        except requests.RequestException as e:
+            record.update(status="error", detail=f"Sin conexión con Meta: {e}")
+        if auth_error:
+            store.save_sale(sale_id, record)
+            store.patch("facebook", invalid=str(auth_error))
+            raise TokenRejected(str(auth_error))
     store.save_sale(sale_id, record)
     store.log("info" if record["status"] == "enviado" else "warning",
               f"Venta {record['status']}: {record['client_name'] or 'sin nombre'} "
               f"${record['amount']:,.2f}", detail=record.get("detail"))
     return sale_id, record
+
+
+class TokenRejected(Exception):
+    """Meta rechazó el token: se detiene la revisión hasta que peguen uno nuevo."""
+
+
+def _connection():
+    """Datos de Meta con el token descifrado (solo en memoria). Lanza store.TokenError si no se puede."""
+    fb = store.facebook()
+    state = store.fb_status(fb)["state"]
+    if state == "none":
+        raise store.TokenError("Falta conectar Meta: pega el token y el ID del pixel en el panel")
+    if state == "incomplete":
+        raise store.TokenError("Falta el ID del pixel en el panel")
+    if state == "invalid":
+        raise store.TokenError(f"Meta rechazó el token guardado; pega uno nuevo en el panel ({fb['invalid']})")
+    fb["token"] = store.facebook_token()
+    return fb
 
 
 def _fail(message):
@@ -164,13 +189,11 @@ def run_sync(full_days=None):
 
 
 def _run(full_days):
-    fb, settings, last_sync = store.get("facebook"), store.get("settings"), store.get("last_sync")
-    status = store.fb_status(fb)
-    if status["state"] == "none" or not fb.get("dataset_id"):
-        return _fail("Primero conecta Facebook y elige el pixel/dataset")
-    if status["state"] == "expired":
-        return _fail(f"La conexión con Facebook venció (cada {config.FB_RECONNECT_DAYS} días). "
-                     "Vuelve a conectar; las ventas pendientes se enviarán en la siguiente revisión.")
+    settings, last_sync = store.get("settings"), store.get("last_sync")
+    try:
+        fb = _connection()
+    except store.TokenError as e:
+        return _fail(f"{e}. Las ventas pendientes se enviarán en la siguiente revisión.")
 
     started = datetime.now(timezone.utc)
     if full_days:
@@ -207,6 +230,9 @@ def _run(full_days):
                     _, record = send_sale(lead, sale, contact, fb, settings)
                     key = {"enviado": "enviadas", "error": "errores"}.get(record["status"], "omitidas")
                     summary[key] += 1
+    except TokenRejected as e:
+        return _fail(f"Meta rechazó el token; pega uno nuevo en el panel ({e}). "
+                     "Las ventas pendientes se enviarán en la siguiente revisión.")
     except (LeadsalesError, requests.RequestException) as e:
         return _fail(f"Error con Leadsales: {e}")
 
@@ -222,13 +248,17 @@ def _run(full_days):
 
 def send_manual(phone, amount, currency, name="", what_sold=""):
     """Envía una venta capturada a mano (por si el vendedor no la marcó en Leadsales)."""
-    fb, settings = store.get("facebook"), store.get("settings")
-    if store.fb_status(fb)["state"] != "connected" or not fb.get("dataset_id"):
-        raise meta.MetaError("Conecta Facebook (o vuelve a conectar) y elige el pixel/dataset")
+    try:
+        fb = _connection()
+    except store.TokenError as e:
+        raise meta.MetaError(str(e))
     parts = (name or "").split()
     contact = {"phone": phone, "first_name": parts[0] if parts else "",
                "last_name": " ".join(parts[1:]), "name": name}
     sale = {"uuid": f"manual-{int(time.time() * 1000)}", "amount": amount, "currency": currency,
             "what_sold": what_sold, "manual": True}
-    _, record = send_sale({"id": None}, sale, contact, fb, settings)
+    try:
+        _, record = send_sale({"id": None}, sale, contact, fb, store.get("settings"))
+    except TokenRejected as e:
+        raise meta.MetaError(f"Meta rechazó el token; pega uno nuevo ({e})")
     return record

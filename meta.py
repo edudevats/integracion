@@ -1,20 +1,30 @@
-"""Facebook Login + Conversions API (CAPI) de Meta."""
+"""API de conversiones (CAPI) de Meta.
+
+Se usa el token que el dueño genera en el Administrador de eventos
+(Configuración del pixel > API de conversiones > Generar token de acceso).
+Ese token solo permite enviar eventos a ese pixel y no vence.
+"""
 import hashlib
 import re
-import time
 import unicodedata
-from urllib.parse import urlencode
 
 import requests
 
 import config
 
 GRAPH = "https://graph.facebook.com"
-SCOPES = ["ads_management", "business_management", "ads_read"]
+# Códigos de Meta que significan "el token ya no sirve o no tiene permiso"
+AUTH_ERROR_CODES = {102, 190, 10, 200, 294}
 
 
 class MetaError(Exception):
-    pass
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def is_auth(self):
+        return self.code in AUTH_ERROR_CODES
 
 
 def _graph_url(path):
@@ -29,81 +39,23 @@ def _check(r):
     if r.status_code >= 400 or "error" in body:
         err = body.get("error", {})
         msg = err.get("error_user_msg") or err.get("message") or str(body)[:300]
-        raise MetaError(f"Meta ({r.status_code}): {msg}")
+        raise MetaError(f"Meta ({r.status_code}): {msg}", code=err.get("code"))
     return body
 
 
-# ---------- Facebook Login (OAuth) ----------
-def login_url(state):
-    q = {
-        "client_id": config.FB_APP_ID,
-        "redirect_uri": config.FB_REDIRECT_URI,
-        "state": state,
-        "scope": ",".join(SCOPES),
-        "response_type": "code",
-    }
-    return f"https://www.facebook.com/{config.FB_GRAPH_VERSION}/dialog/oauth?{urlencode(q)}"
-
-
-def exchange_code(code):
-    """code -> token de usuario de larga duración (~60 días)."""
-    short = _check(requests.get(_graph_url("oauth/access_token"), params={
-        "client_id": config.FB_APP_ID,
-        "client_secret": config.FB_APP_SECRET,
-        "redirect_uri": config.FB_REDIRECT_URI,
-        "code": code,
-    }, timeout=30))
-    long = _check(requests.get(_graph_url("oauth/access_token"), params={
-        "grant_type": "fb_exchange_token",
-        "client_id": config.FB_APP_ID,
-        "client_secret": config.FB_APP_SECRET,
-        "fb_exchange_token": short["access_token"],
-    }, timeout=30))
-    expires_in = int(long.get("expires_in") or 60 * 24 * 3600)
-    me = _check(requests.get(_graph_url("me"), params={
-        "fields": "id,name", "access_token": long["access_token"]}, timeout=30))
-    return {
-        "token": long["access_token"],
-        "connected_at": int(time.time()),
-        "expires_at": int(time.time()) + expires_in,
-        "user_id": me.get("id"),
-        "user_name": me.get("name"),
-    }
-
-
-def list_datasets(token):
-    """Píxeles / datasets a los que tiene acceso el usuario (vía cuentas publicitarias y negocios)."""
-    found = {}
-
-    def add(px, origin):
-        if px and px.get("id") and px["id"] not in found:
-            found[px["id"]] = {"id": px["id"], "name": px.get("name") or px["id"], "origin": origin}
-
-    try:
-        body = _check(requests.get(_graph_url("me/adaccounts"), params={
-            "fields": "name,adspixels{id,name}", "limit": 100, "access_token": token}, timeout=30))
-        for acc in body.get("data", []):
-            for px in (acc.get("adspixels") or {}).get("data", []):
-                add(px, f"Cuenta publicitaria: {acc.get('name')}")
-    except MetaError:
-        pass
-    try:
-        body = _check(requests.get(_graph_url("me/businesses"), params={
-            "fields": "name,owned_pixels{id,name}", "limit": 100, "access_token": token}, timeout=30))
-        for biz in body.get("data", []):
-            for px in (biz.get("owned_pixels") or {}).get("data", []):
-                add(px, f"Negocio: {biz.get('name')}")
-    except MetaError:
-        pass
-    return sorted(found.values(), key=lambda p: p["name"].lower())
+def verify_dataset(token, dataset_id):
+    """Comprueba que el token pueda leer el pixel. Devuelve su nombre."""
+    r = requests.get(_graph_url(dataset_id), params={"fields": "id,name"},
+                     headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    return _check(r).get("name") or dataset_id
 
 
 def send_events(dataset_id, token, events, test_event_code=""):
-    payload = {"data": events}
+    # El token va en el cuerpo (no en la URL) para que no quede en bitácoras de servidores
+    payload = {"data": events, "access_token": token}
     if test_event_code:
         payload["test_event_code"] = test_event_code
-    r = requests.post(_graph_url(f"{dataset_id}/events"), params={"access_token": token},
-                      json=payload, timeout=30)
+    r = requests.post(_graph_url(f"{dataset_id}/events"), json=payload, timeout=30)
     return _check(r)
 
 
@@ -163,7 +115,7 @@ def build_user_data(contact, external_id=None):
 
 
 def build_purchase_event(*, event_id, event_time, value, currency, contact, content_name=None,
-                         external_id=None, order_id=None):
+                         external_id=None, order_id=None, waba_id=None):
     user_data = build_user_data(contact, external_id)
     event = {
         "event_name": "Purchase",
@@ -179,10 +131,10 @@ def build_purchase_event(*, event_id, event_time, value, currency, contact, cont
     if order_id:
         event["custom_data"]["order_id"] = str(order_id)
     ctwa = contact.get("ctwa_clid")
-    if ctwa and config.WHATSAPP_BUSINESS_ACCOUNT_ID:
+    if ctwa and waba_id:
         # Venta de un lead que llegó por anuncio "clic a WhatsApp": atribución directa al anuncio.
         event["action_source"] = "business_messaging"
         event["messaging_channel"] = "whatsapp"
         user_data["ctwa_clid"] = ctwa
-        user_data["whatsapp_business_account_id"] = config.WHATSAPP_BUSINESS_ACCOUNT_ID
+        user_data["whatsapp_business_account_id"] = waba_id
     return event

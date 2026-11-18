@@ -6,44 +6,63 @@
 {% endif %}
 
 <div class="grid">
-  <!-- 1. Facebook -->
+  <!-- 1. Meta -->
   <div class="card">
-    <h2>1 · Facebook</h2>
-    {% if fbs.state == "expired" %}
-      <p><span class="pill error">Desconectado</span> La conexión de <b>{{ fb.user_name }}</b> venció
-        (se renueva cada {{ reconnect_days }} días). Mientras tanto no se envían ventas; al reconectar se mandan las pendientes.</p>
-      <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <button class="primary" type="submit">Volver a conectar con Facebook</button></form>
-    {% elif fb.token %}
-      <p><span class="pill enviado">Conectado</span> como <b>{{ fb.user_name }}</b>
-        {% if fbs.days_left is not none %}<span class="muted">· vuelve a conectar en {{ fbs.days_left }} días</span>{% endif %}</p>
-      {% if fbs.days_left is not none and fbs.days_left < 7 %}
-        <div class="flash error">La conexión con Facebook vence en {{ fbs.days_left }} días: pulsa "Reconectar".</div>
-      {% endif %}
-      <p>Pixel / dataset: {% if fb.dataset_id %}<b>{{ fb.dataset_name }}</b> <span class="muted">({{ fb.dataset_id }})</span>{% else %}<span class="err">sin elegir</span>{% endif %}</p>
-      <form method="post" action="/facebook/dataset">
-        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        {% if datasets %}
-          <label for="ds">Elige el pixel al que se mandan las ventas</label>
-          <select id="ds" name="dataset_id">
-            {% for d in datasets %}<option value="{{ d.id }}" {% if d.id == fb.dataset_id %}selected{% endif %}>{{ d.name }} — {{ d.origin }}</option>{% endfor %}
-          </select>
-        {% else %}
-          <label for="ds">ID del pixel / dataset</label>
-          <input id="ds" name="dataset_id" value="{{ fb.dataset_id or '' }}" inputmode="numeric" placeholder="Ej. 1234567890">
-        {% endif %}
-        <div class="row"><button class="primary" type="submit">Guardar pixel</button></div>
-      </form>
-      <div class="row">
-        <form method="post" action="/facebook/datasets/refresh"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Buscar mis píxeles</button></form>
-        <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Reconectar</button></form>
-        <form method="post" action="/facebook/disconnect"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="link" type="submit">Desconectar</button></form>
-      </div>
+    <h2>1 · Conexión con Meta (Facebook)</h2>
+    {% set st = fbs.state %}
+    {% if st == "connected" %}
+      <p><span class="pill enviado">Conectado</span> al pixel <b>{{ fb.dataset_name }}</b>
+        <span class="muted">({{ fb.dataset_id }})</span></p>
+      <p class="muted">Token guardado cifrado (termina en {{ fb.token_hint }}).
+        WhatsApp Business: {{ fb.waba_id or "no configurado" }}.</p>
+    {% elif st == "invalid" %}
+      <div class="flash error"><b>Meta rechazó el token guardado.</b> Genera uno nuevo y pégalo abajo.
+        <div class="muted">{{ fbs.reason }}</div></div>
+    {% elif st == "incomplete" %}
+      <p><span class="pill omitido">Falta el pixel</span> Escribe el ID del pixel abajo.</p>
     {% else %}
-      <p class="muted">Inicia sesión con un usuario de Facebook que administre la cuenta publicitaria y el pixel.</p>
-      <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
-        <button class="primary" type="submit">Continuar con Facebook</button></form>
+      <p><span class="pill error">Sin conectar</span> Pega el token y el ID del pixel. Sigue la guía de abajo.</p>
     {% endif %}
+
+    <form method="post" action="/meta/connect" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label for="tk">Token de acceso de la API de conversiones{% if st == "connected" %} (déjalo vacío para conservar el actual){% endif %}</label>
+      <input id="tk" name="token" type="password" spellcheck="false" placeholder="EAAB…  (paso 4 de la guía)">
+      <label for="ds">ID del pixel / conjunto de datos</label>
+      <input id="ds" name="dataset_id" value="{{ fb.dataset_id or '' }}" inputmode="numeric" required placeholder="Ej. 1234567890123456  (paso 3)">
+      <label for="wb">ID de la cuenta de WhatsApp Business (opcional, paso 6)</label>
+      <input id="wb" name="waba_id" value="{{ fb.waba_id or '' }}" inputmode="numeric" placeholder="Ej. 109876543210987">
+      <div class="row"><button class="primary" type="submit">{{ "Guardar cambios" if st == "connected" else "Conectar" }}</button></div>
+    </form>
+    {% if st != "none" %}
+    <form method="post" action="/meta/disconnect" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="link" type="submit">Borrar token y desconectar</button></form>
+    {% endif %}
+
+    <details class="guide" {% if st == "none" %}open{% endif %}>
+      <summary>¿Cómo obtengo el token y el ID del pixel? (5 minutos, lo hace el dueño de la página)</summary>
+      <ol>
+        <li>Entra a <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener">business.facebook.com/events_manager2</a>
+          (<b>Administrador de eventos</b>) con el Facebook que administra los anuncios de Red Médica.</li>
+        <li>En la columna de la izquierda, en <b>Orígenes de datos</b>, elige el <b>pixel</b> que usan los anuncios
+          (si hay varios, el que está conectado a la cuenta publicitaria donde se pagan los anuncios).</li>
+        <li><b>ID del pixel:</b> es el número largo que aparece debajo del nombre del pixel (o en la pestaña
+          <b>Configuración</b> → "ID del conjunto de datos"). Cópialo en el campo <i>ID del pixel</i>.</li>
+        <li><b>Token:</b> abre la pestaña <b>Configuración</b>, baja hasta la sección <b>API de conversiones</b> y pulsa
+          <b>Generar token de acceso</b> (puede decir "Configurar de forma manual" → "Generar token").
+          Copia el token completo: Meta lo muestra <b>una sola vez</b>. Pégalo en el campo <i>Token</i>.</li>
+        <li>Pulsa <b>Conectar</b>. Si todo está bien verás "Conectado" con el nombre del pixel.</li>
+        <li><i>(Opcional, mejora la atribución de anuncios de clic a WhatsApp)</i> <b>ID de WhatsApp Business:</b>
+          en <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noopener">Configuración del negocio → Cuentas → Cuentas de WhatsApp</a>,
+          elige la cuenta del número que recibe los leads y copia su <b>Identificador</b>.</li>
+        <li><b>Prueba:</b> en el Administrador de eventos abre la pestaña <b>Probar eventos</b>, copia el código
+          (ej. <code>TEST12345</code>), pégalo en "Código de prueba" (tarjeta 2), pulsa <b>Sincronizar ahora</b> y
+          revisa que llegue el evento <i>Purchase</i>. Después borra el código.</li>
+      </ol>
+      <p class="muted">El token solo permite enviar eventos a ese pixel: no da acceso a la cuenta de Facebook, a los anuncios
+        ni a los pagos. No vence; si algún día Meta lo rechaza, el panel lo avisará y basta con generar otro.
+        Los nombres de los botones pueden variar un poco según la versión de Meta.</p>
+    </details>
   </div>
 
   <!-- 2. Sincronización -->
@@ -53,8 +72,8 @@
     <p>Última revisión: <b>{{ (r.at if r else none)|dt }}</b>
       {% if r %}<br><span class="{{ 'ok' if r.ok else 'err' }}">{{ r.message }}</span>{% endif %}</p>
     <p class="muted">Todos los días a las <b>{{ daily_label }}</b> se revisan los leads con actividad desde la última revisión
-      y las ventas marcadas como <b>Vendido</b> (con monto) se mandan a Meta como evento <b>Purchase</b>.
-      {% if not waba %}Sin WHATSAPP_BUSINESS_ACCOUNT_ID se envían con teléfono/nombre cifrados (sin ctwa_clid).{% endif %}</p>
+      y las ventas marcadas como <b>Vendido</b> (con monto) se mandan a Meta como evento <b>Purchase</b>
+      (teléfono y nombre van cifrados).</p>
     <form method="post" action="/sync">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <div class="row">

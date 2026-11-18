@@ -24,14 +24,10 @@ LEADSALES_FIREBASE_API_KEY = _get(
 )
 LEADSALES_API_BASE = _get("LEADSALES_API_BASE", "https://api.leadsales.services/v2/web")
 
-FB_APP_ID = _get("FB_APP_ID")
-FB_APP_SECRET = _get("FB_APP_SECRET")
-FB_REDIRECT_URI = _get("FB_REDIRECT_URI", "http://localhost:5000/facebook/callback")
-FB_GRAPH_VERSION = _get("FB_GRAPH_VERSION", "v24.0")
-WHATSAPP_BUSINESS_ACCOUNT_ID = _get("WHATSAPP_BUSINESS_ACCOUNT_ID")
+# Los datos de Meta (token de la API de conversiones, ID del pixel y de WhatsApp Business)
+# NO van en .env: se pegan en el panel y el token se guarda cifrado en la base.
+FB_GRAPH_VERSION = "v24.0"
 
-# La conexión con Facebook se pide de nuevo cada N días (el token de Meta dura ~60).
-FB_RECONNECT_DAYS = max(1, int(_get("FB_RECONNECT_DAYS", "60")))
 # Primera revisión: cuántos días hacia atrás buscar ventas.
 SYNC_LOOKBACK_DAYS = max(1, int(_get("SYNC_LOOKBACK_DAYS", "3")))
 # Nunca buscar más atrás de esto (Meta solo acepta ventas de los últimos 7 días).
@@ -42,7 +38,8 @@ DEFAULT_CURRENCY = _get("DEFAULT_CURRENCY", "MXN").upper()
 
 DATA_DIR = BASE_DIR / "data"
 DB_FILE = DATA_DIR / "app.db"
-SECURE_COOKIES = FB_REDIRECT_URI.startswith("https://")
+# Cookies solo por HTTPS en PythonAnywhere (define PYTHONANYWHERE_DOMAIN en sus servidores)
+SECURE_COOKIES = bool(os.getenv("PYTHONANYWHERE_DOMAIN")) or _get("APP_SECURE_COOKIES") == "1"
 
 
 def missing_settings():
@@ -51,7 +48,5 @@ def missing_settings():
         "APP_SECRET_KEY": APP_SECRET_KEY,
         "LEADSALES_EMAIL": LEADSALES_EMAIL,
         "LEADSALES_PASSWORD": LEADSALES_PASSWORD,
-        "FB_APP_ID": FB_APP_ID,
-        "FB_APP_SECRET": FB_APP_SECRET,
     }
     return [k for k, v in required.items() if not v]
