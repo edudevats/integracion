@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set nav = "panel" %}
+{% block content %}
+{% if missing %}
+<div class="flash error">Faltan variables en <code>.env</code>: {{ missing|join(", ") }}</div>
+{% endif %}
+
+<div class="grid">
+  <!-- 1. Facebook -->
+  <div class="card">
+    <h2>1 · Facebook</h2>
+    {% if fbs.state == "expired" %}
+      <p><span class="pill error">Desconectado</span> La conexión de <b>{{ fb.user_name }}</b> venció
+        (se renueva cada {{ reconnect_days }} días). Mientras tanto no se envían ventas; al reconectar se mandan las pendientes.</p>
+      <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="primary" type="submit">Volver a conectar con Facebook</button></form>
+    {% elif fb.token %}
+      <p><span class="pill enviado">Conectado</span> como <b>{{ fb.user_name }}</b>
+        {% if fbs.days_left is not none %}<span class="muted">· vuelve a conectar en {{ fbs.days_left }} días</span>{% endif %}</p>
+      {% if fbs.days_left is not none and fbs.days_left < 7 %}
+        <div class="flash error">La conexión con Facebook vence en {{ fbs.days_left }} días: pulsa "Reconectar".</div>
+      {% endif %}
+      <p>Pixel / dataset: {% if fb.dataset_id %}<b>{{ fb.dataset_name }}</b> <span class="muted">({{ fb.dataset_id }})</span>{% else %}<span class="err">sin elegir</span>{% endif %}</p>
+      <form method="post" action="/facebook/dataset">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if datasets %}
+          <label for="ds">Elige el pixel al que se mandan las ventas</label>
+          <select id="ds" name="dataset_id">
+            {% for d in datasets %}<option value="{{ d.id }}" {% if d.id == fb.dataset_id %}selected{% endif %}>{{ d.name }} — {{ d.origin }}</option>{% endfor %}
+          </select>
+        {% else %}
+          <label for="ds">ID del pixel / dataset</label>
+          <input id="ds" name="dataset_id" value="{{ fb.dataset_id or '' }}" inputmode="numeric" placeholder="Ej. 1234567890">
+        {% endif %}
+        <div class="row"><button class="primary" type="submit">Guardar pixel</button></div>
+      </form>
+      <div class="row">
+        <form method="post" action="/facebook/datasets/refresh"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Buscar mis píxeles</button></form>
+        <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Reconectar</button></form>
+        <form method="post" action="/facebook/disconnect"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="link" type="submit">Desconectar</button></form>
+      </div>
+    {% else %}
+      <p class="muted">Inicia sesión con un usuario de Facebook que administre la cuenta publicitaria y el pixel.</p>
+      <form method="post" action="/facebook/connect"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="primary" type="submit">Continuar con Facebook</button></form>
+    {% endif %}
+  </div>
+
+  <!-- 2. Sincronización -->
+  <div class="card">
+    <h2>2 · Sincronización con Leadsales</h2>
+    {% set r = last %}
+    <p>Última revisión: <b>{{ (r.at if r else none)|dt }}</b>
+      {% if r %}<br><span class="{{ 'ok' if r.ok else 'err' }}">{{ r.message }}</span>{% endif %}</p>
+    <p class="muted">Todos los días a las <b>{{ daily_label }}</b> se revisan los leads con actividad desde la última revisión
+      y las ventas marcadas como <b>Vendido</b> (con monto) se mandan a Meta como evento <b>Purchase</b>.
+      {% if not waba %}Sin WHATSAPP_BUSINESS_ACCOUNT_ID se envían con teléfono/nombre cifrados (sin ctwa_clid).{% endif %}</p>
+    <form method="post" action="/sync">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <div class="row">
+        <div><label for="days">Revisar últimos N días (opcional, máx. 7)</label><input id="days" name="days" inputmode="numeric" placeholder="vacío = desde la última vez"></div>
+        <button class="primary" type="submit">Sincronizar ahora</button>
+      </div>
+    </form>
+    <form method="post" action="/settings">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label for="tec">Código de prueba de Meta (Administrador de eventos → Probar eventos)</label>
+      <input id="tec" name="test_event_code" value="{{ settings.test_event_code }}" placeholder="TEST12345 — déjalo vacío en producción">
+      <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="enabled" style="width:auto" {% if settings.enabled %}checked{% endif %}> Envío diario activo</label>
+      <div class="row"><button type="submit">Guardar ajustes</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Venta manual -->
+<div class="card" style="margin-top:16px">
+  <h2>Enviar una venta a mano</h2>
+  <p class="muted">Para ventas que no se marcaron como "Vendido" en Leadsales.</p>
+  <form method="post" action="/manual">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="row">
+      <div><label for="mp">Teléfono (WhatsApp)</label><input id="mp" name="phone" required placeholder="5215512345678"></div>
+      <div><label for="mn">Nombre</label><input id="mn" name="name" placeholder="Opcional"></div>
+      <div><label for="ma">Monto</label><input id="ma" name="amount" required inputmode="decimal" placeholder="1500"></div>
+      <div><label for="mc">Moneda</label><input id="mc" name="currency" value="MXN"></div>
+      <div><label for="mw">¿Qué se vendió?</label><input id="mw" name="what_sold" placeholder="Opcional"></div>
+      <button class="primary" type="submit">Enviar</button>
+    </div>
+  </form>
+</div>
+
+<!-- Ventas enviadas -->
+<div class="card">
+  <h2>Últimas ventas procesadas</h2>
+  <p class="muted">{{ totals.clients }} clientes y {{ totals.n }} ventas enviadas a Facebook
+    (${{ '{:,.2f}'.format(totals.total) }}). <a href="/clientes">Ver todos los clientes →</a></p>
+  {% if sales %}{% with rows=sales %}{% include "_sales_table.html" %}{% endwith %}
+  {% else %}<p class="muted">Todavía no se ha enviado ninguna venta.</p>{% endif %}
+</div>
+
+<!-- Bitácora -->
+<div class="card">
+  <h2>Bitácora</h2>
+  <div class="scroll"><table>
+    {% for e in logs %}
+    <tr><td class="muted" style="white-space:nowrap">{{ e.at|dt }}</td><td class="{{ 'err' if e.level == 'error' }}">{{ e.message }}{% if e.detail %}<div class="muted">{{ e.detail }}</div>{% endif %}</td></tr>
+    {% else %}<tr><td class="muted">Sin actividad.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+<div class="scroll"><table>
+  <tr><th>Fecha de venta</th><th>Cliente</th><th>Teléfono</th><th>Monto</th><th>Qué</th><th>Estado</th></tr>
+  {% for s in rows %}
+  <tr>
+    <td style="white-space:nowrap">{{ s.event_time|dt }}</td>
+    <td>{{ s.client_name or '—' }}{% if s.manual %} <span class="muted">(manual)</span>{% endif %}{% if s.test %} <span class="muted">(prueba)</span>{% endif %}</td>
+    <td style="white-space:nowrap">{{ s.phone or '—' }}</td>
+    <td style="white-space:nowrap">${{ '{:,.2f}'.format(s.amount) }} {{ s.currency }}</td>
+    <td>{{ s.what_sold or '—' }}</td>
+    <td><span class="pill {{ s.status }}">{{ s.status }}</span>
+      {% if s.status != 'enviado' %}<div class="muted">{{ s.detail }}</div>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table></div>

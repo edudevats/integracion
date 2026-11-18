@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set nav = "clientes" %}
+{% block title %}Clientes enviados · Ventas a Meta{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Clientes enviados a Facebook</h2>
+  <p class="muted">{{ totals.clients }} clientes y {{ totals.n }} ventas enviadas
+    (${{ '{:,.2f}'.format(totals.total) }}, sin contar pruebas).</p>
+  <form method="get" action="/clientes">
+    <div class="row">
+      <div><label for="q">Buscar por nombre, teléfono, correo o producto</label>
+        <input id="q" name="q" value="{{ q }}" placeholder="Ej. Ana o 5512"></div>
+      <div><label for="estado">Estado</label>
+        <select id="estado" name="estado">
+          <option value="" {% if not status %}selected{% endif %}>Todos</option>
+          <option value="enviado" {% if status == 'enviado' %}selected{% endif %}>Enviado</option>
+          <option value="omitido" {% if status == 'omitido' %}selected{% endif %}>Omitido</option>
+          <option value="error" {% if status == 'error' %}selected{% endif %}>Error</option>
+        </select></div>
+      <button class="primary" type="submit">Filtrar</button>
+      <button type="submit" name="formato" value="csv">Descargar CSV</button>
+    </div>
+  </form>
+</div>
+<div class="card">
+  {% if rows %}{% include "_sales_table.html" %}
+  <p class="muted">{{ rows|length }} registros.</p>
+  {% else %}<p class="muted">No hay registros{% if q or status %} con ese filtro{% endif %}.</p>{% endif %}
+</div>
+{% endblock %}
