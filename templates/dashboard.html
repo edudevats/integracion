@@ -1,46 +1,108 @@
 {% extends "base.html" %}
 {% set nav = "panel" %}
 {% block content %}
+{% set st = fbs.state %}
+{% set r = last %}
+<div class="page-head">
+  <div>
+    <h1>Panel</h1>
+    <p>Ventas marcadas como <b>Vendido</b> en Leadsales que se envían a Meta como evento <i>Purchase</i>.</p>
+  </div>
+</div>
+
 {% if missing %}
-<div class="flash error">Faltan variables en <code>.env</code>: {{ missing|join(", ") }}</div>
+<div class="flash error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+  <div>Faltan variables en <code>.env</code>: {{ missing|join(", ") }}</div></div>
 {% endif %}
+{% if settings.test_event_code %}
+<div class="flash warn" role="status"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+  <div>Modo de prueba activo (código <code>{{ settings.test_event_code }}</code>). Los eventos llegan a <i>Probar eventos</i> de Meta;
+    bórralo en la tarjeta 2 cuando termines.</div></div>
+{% endif %}
+
+<!-- Resumen -->
+<section class="stats" aria-label="Resumen">
+  <div class="stat">
+    <div class="k"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg>Conexión con Meta</div>
+    <div class="v" style="font-size:18px">
+      {% if st == "connected" %}<span class="pill ok">Conectado</span>
+      {% elif st == "invalid" %}<span class="pill error">Token rechazado</span>
+      {% elif st == "incomplete" %}<span class="pill warn">Falta el pixel</span>
+      {% else %}<span class="pill error">Sin conectar</span>{% endif %}
+    </div>
+    <div class="s muted">{% if st == "connected" %}{{ fb.dataset_name }}{% else %}Completa la tarjeta 1{% endif %}</div>
+  </div>
+  <div class="stat">
+    <div class="k"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>Última revisión</div>
+    <div class="v num" style="font-size:18px">{{ (r.at if r else none)|dt }}</div>
+    <div class="s {{ ('ok' if r.ok else 'err') if r else 'muted' }}">
+      {% if r %}{{ 'Correcta' if r.ok else 'Con errores' }}{% else %}Aún no se ha ejecutado{% endif %}
+      · <span class="muted">{{ 'diaria activa' if settings.enabled else 'envío diario pausado' }}</span></div>
+  </div>
+  <div class="stat">
+    <div class="k"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg>Clientes enviados</div>
+    <div class="v">{{ '{:,}'.format(totals.clients) }}</div>
+    <div class="s muted">{{ '{:,}'.format(totals.n) }} ventas</div>
+  </div>
+  <div class="stat">
+    <div class="k"><svg class="icon" aria-hidden="true"><use href="#i-cash"/></svg>Monto reportado</div>
+    <div class="v">${{ '{:,.2f}'.format(totals.total) }}</div>
+    <div class="s muted">Sin contar pruebas</div>
+  </div>
+</section>
 
 <div class="grid">
   <!-- 1. Meta -->
-  <div class="card">
-    <h2>1 · Conexión con Meta (Facebook)</h2>
-    {% set st = fbs.state %}
+  <section class="card" aria-labelledby="h-meta">
+    <div class="card-head">
+      <h2 id="h-meta"><span class="step">1</span>Conexión con Meta (Facebook)</h2>
+      {% if st == "connected" %}<span class="pill ok">Conectado</span>{% endif %}
+    </div>
     {% if st == "connected" %}
-      <p><span class="pill enviado">Conectado</span> al pixel <b>{{ fb.dataset_name }}</b>
-        <span class="muted">({{ fb.dataset_id }})</span></p>
-      <p class="muted">Token guardado cifrado (termina en {{ fb.token_hint }}).
-        WhatsApp Business: {{ fb.waba_id or "no configurado" }}.</p>
+      <p>Pixel <b>{{ fb.dataset_name }}</b> <span class="muted num">({{ fb.dataset_id }})</span></p>
+      <p class="muted">Token guardado cifrado (termina en <code>{{ fb.token_hint }}</code>) ·
+        WhatsApp Business: {{ fb.waba_id or "no configurado" }}</p>
     {% elif st == "invalid" %}
-      <div class="flash error"><b>Meta rechazó el token guardado.</b> Genera uno nuevo y pégalo abajo.
-        <div class="muted">{{ fbs.reason }}</div></div>
+      <div class="flash error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+        <div><b>Meta rechazó el token guardado.</b> Genera uno nuevo y pégalo abajo.
+        <div class="muted">{{ fbs.reason }}</div></div></div>
     {% elif st == "incomplete" %}
-      <p><span class="pill omitido">Falta el pixel</span> Escribe el ID del pixel abajo.</p>
+      <div class="flash warn"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><div>Falta el ID del pixel. Escríbelo abajo.</div></div>
     {% else %}
-      <p><span class="pill error">Sin conectar</span> Pega el token y el ID del pixel. Sigue la guía de abajo.</p>
+      <div class="flash info"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg><div>Pega el token y el ID del pixel. Si no los tienes, abre la guía de abajo.</div></div>
     {% endif %}
 
     <form method="post" action="/meta/connect" autocomplete="off">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <label for="tk">Token de acceso de la API de conversiones{% if st == "connected" %} (déjalo vacío para conservar el actual){% endif %}</label>
-      <input id="tk" name="token" type="password" spellcheck="false" placeholder="EAAB…  (paso 4 de la guía)">
-      <label for="ds">ID del pixel / conjunto de datos</label>
-      <input id="ds" name="dataset_id" value="{{ fb.dataset_id or '' }}" inputmode="numeric" required placeholder="Ej. 1234567890123456  (paso 3)">
-      <label for="wb">ID de la cuenta de WhatsApp Business (opcional, paso 6)</label>
-      <input id="wb" name="waba_id" value="{{ fb.waba_id or '' }}" inputmode="numeric" placeholder="Ej. 109876543210987">
-      <div class="row"><button class="primary" type="submit">{{ "Guardar cambios" if st == "connected" else "Conectar" }}</button></div>
+      <div class="field">
+        <label for="tk">Token de acceso de la API de conversiones</label>
+        <div class="pw"><input id="tk" name="token" type="password" spellcheck="false" autocapitalize="off" placeholder="EAAB…" aria-describedby="tk-h" {% if st == "none" %}required{% endif %}><button type="button" aria-label="Mostrar" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button></div>
+        <span class="hint" id="tk-h">{% if st == "connected" %}Déjalo vacío para conservar el actual. {% endif %}Paso 4 de la guía.</span>
+      </div>
+      <div class="field">
+        <label for="ds">ID del pixel / conjunto de datos</label>
+        <input id="ds" name="dataset_id" value="{{ fb.dataset_id or '' }}" inputmode="numeric" pattern="[0-9]+" required placeholder="1234567890123456" aria-describedby="ds-h">
+        <span class="hint" id="ds-h">Solo números. Paso 3 de la guía.</span>
+      </div>
+      <div class="field">
+        <label for="wb">ID de WhatsApp Business <span class="hint" style="display:inline">(opcional)</span></label>
+        <input id="wb" name="waba_id" value="{{ fb.waba_id or '' }}" inputmode="numeric" pattern="[0-9]*" placeholder="109876543210987" aria-describedby="wb-h">
+        <span class="hint" id="wb-h">Mejora la atribución de anuncios de clic a WhatsApp. Paso 6.</span>
+      </div>
+      <div class="actions">
+        <button class="primary" type="submit" data-busy="Verificando con Meta…"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg>{{ "Guardar cambios" if st == "connected" else "Conectar" }}</button>
+      </div>
     </form>
     {% if st != "none" %}
-    <form method="post" action="/meta/disconnect" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button class="link" type="submit">Borrar token y desconectar</button></form>
+    <form method="post" action="/meta/disconnect" style="margin-top:6px" data-confirm="¿Borrar el token de Meta? Las ventas dejarán de enviarse hasta que pegues uno nuevo.">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="danger-link" type="submit">Borrar token y desconectar</button></form>
     {% endif %}
 
     <details class="guide" {% if st == "none" %}open{% endif %}>
-      <summary>¿Cómo obtengo el token y el ID del pixel? (5 minutos, lo hace el dueño de la página)</summary>
+      <summary><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>¿Cómo obtengo el token y el ID del pixel?<svg class="icon chev" aria-hidden="true"><use href="#i-chev"/></svg></summary>
+      <div class="body">
+      <p class="muted">5 minutos · lo hace el dueño de la página.</p>
       <ol>
         <li>Entra a <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener">business.facebook.com/events_manager2</a>
           (<b>Administrador de eventos</b>) con el Facebook que administra los anuncios de Red Médica.</li>
@@ -62,68 +124,87 @@
       <p class="muted">El token solo permite enviar eventos a ese pixel: no da acceso a la cuenta de Facebook, a los anuncios
         ni a los pagos. No vence; si algún día Meta lo rechaza, el panel lo avisará y basta con generar otro.
         Los nombres de los botones pueden variar un poco según la versión de Meta.</p>
+      </div>
     </details>
-  </div>
+  </section>
 
   <!-- 2. Sincronización -->
-  <div class="card">
-    <h2>2 · Sincronización con Leadsales</h2>
-    {% set r = last %}
-    <p>Última revisión: <b>{{ (r.at if r else none)|dt }}</b>
-      {% if r %}<br><span class="{{ 'ok' if r.ok else 'err' }}">{{ r.message }}</span>{% endif %}</p>
+  <section class="card" aria-labelledby="h-sync">
+    <div class="card-head">
+      <h2 id="h-sync"><span class="step">2</span>Sincronización con Leadsales</h2>
+      <span class="pill {{ 'ok' if settings.enabled else 'warn' }}">{{ 'Diaria activa' if settings.enabled else 'Pausada' }}</span>
+    </div>
+    <p>Última revisión: <b class="num">{{ (r.at if r else none)|dt }}</b></p>
+    {% if r %}
+    <div class="flash {{ 'ok' if r.ok else 'error' }}"><svg class="icon" aria-hidden="true"><use href="#{{ 'i-check' if r.ok else 'i-alert' }}"/></svg><div>{{ r.message }}</div></div>
+    {% endif %}
     <p class="muted">Todos los días a las <b>{{ daily_label }}</b> se revisan los leads con actividad desde la última revisión
       y las ventas marcadas como <b>Vendido</b> (con monto) se mandan a Meta como evento <b>Purchase</b>
       (teléfono y nombre van cifrados).</p>
     <form method="post" action="/sync">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <div class="row">
-        <div><label for="days">Revisar últimos N días (opcional, máx. 7)</label><input id="days" name="days" inputmode="numeric" placeholder="vacío = desde la última vez"></div>
-        <button class="primary" type="submit">Sincronizar ahora</button>
+        <div><label for="days">Revisar últimos N días</label>
+          <input id="days" name="days" type="number" min="1" max="7" inputmode="numeric" placeholder="Desde la última vez" aria-describedby="days-h"></div>
+        <button class="primary" type="submit" data-busy="Sincronizando…"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Sincronizar ahora</button>
       </div>
+      <span class="hint" id="days-h">Opcional, máximo 7 (Meta solo acepta ventas de los últimos 7 días). Puede tardar un poco.</span>
     </form>
+
+    <hr class="divider">
     <form method="post" action="/settings">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <label for="tec">Código de prueba de Meta (Administrador de eventos → Probar eventos)</label>
-      <input id="tec" name="test_event_code" value="{{ settings.test_event_code }}" placeholder="TEST12345 — déjalo vacío en producción">
-      <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="enabled" style="width:auto" {% if settings.enabled %}checked{% endif %}> Envío diario activo</label>
-      <div class="row"><button type="submit">Guardar ajustes</button></div>
+      <h3>Ajustes</h3>
+      <div class="field">
+        <label for="tec">Código de prueba de Meta</label>
+        <input id="tec" name="test_event_code" value="{{ settings.test_event_code or '' }}" placeholder="TEST12345" autocapitalize="characters" aria-describedby="tec-h">
+        <span class="hint" id="tec-h">Administrador de eventos → Probar eventos. Déjalo vacío en producción.</span>
+      </div>
+      <label class="check"><input type="checkbox" name="enabled" {% if settings.enabled %}checked{% endif %}> Envío diario activo</label>
+      <div class="actions"><button type="submit">Guardar ajustes</button></div>
     </form>
-  </div>
+  </section>
 </div>
 
 <!-- Venta manual -->
-<div class="card" style="margin-top:16px">
-  <h2>Enviar una venta a mano</h2>
+<section class="card" aria-labelledby="h-manual">
+  <div class="card-head"><h2 id="h-manual"><svg class="icon" aria-hidden="true"><use href="#i-cart"/></svg>Enviar una venta a mano</h2></div>
   <p class="muted">Para ventas que no se marcaron como "Vendido" en Leadsales.</p>
   <form method="post" action="/manual">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <div class="row">
-      <div><label for="mp">Teléfono (WhatsApp)</label><input id="mp" name="phone" required placeholder="5215512345678"></div>
-      <div><label for="mn">Nombre</label><input id="mn" name="name" placeholder="Opcional"></div>
-      <div><label for="ma">Monto</label><input id="ma" name="amount" required inputmode="decimal" placeholder="1500"></div>
-      <div><label for="mc">Moneda</label><input id="mc" name="currency" value="MXN"></div>
-      <div><label for="mw">¿Qué se vendió?</label><input id="mw" name="what_sold" placeholder="Opcional"></div>
-      <button class="primary" type="submit">Enviar</button>
+      <div><label for="mp">Teléfono (WhatsApp)</label><input id="mp" name="phone" type="tel" autocomplete="off" required placeholder="5215512345678"></div>
+      <div><label for="mn">Nombre <span class="hint" style="display:inline">(opcional)</span></label><input id="mn" name="name" autocomplete="off"></div>
+      <div><label for="ma">Monto</label><input id="ma" name="amount" required inputmode="decimal" pattern="[0-9.,]+" placeholder="1500"></div>
+      <div style="flex:0 1 110px"><label for="mc">Moneda</label><input id="mc" name="currency" value="MXN" maxlength="3" autocapitalize="characters"></div>
+      <div class="grow"><label for="mw">¿Qué se vendió? <span class="hint" style="display:inline">(opcional)</span></label><input id="mw" name="what_sold"></div>
     </div>
+    <div class="actions"><button class="primary" type="submit" data-busy="Enviando…"><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>Enviar a Meta</button></div>
   </form>
-</div>
+</section>
 
 <!-- Ventas enviadas -->
-<div class="card">
-  <h2>Últimas ventas procesadas</h2>
-  <p class="muted">{{ totals.clients }} clientes y {{ totals.n }} ventas enviadas a Facebook
-    (${{ '{:,.2f}'.format(totals.total) }}). <a href="/clientes">Ver todos los clientes →</a></p>
+<section class="card" aria-labelledby="h-sales">
+  <div class="card-head">
+    <h2 id="h-sales">Últimas ventas procesadas</h2>
+    <a class="btn" href="/clientes"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg>Ver todos los clientes</a>
+  </div>
   {% if sales %}{% with rows=sales %}{% include "_sales_table.html" %}{% endwith %}
-  {% else %}<p class="muted">Todavía no se ha enviado ninguna venta.</p>{% endif %}
-</div>
+  {% else %}<div class="empty"><svg class="icon" aria-hidden="true"><use href="#i-inbox"/></svg>Todavía no se ha enviado ninguna venta.</div>{% endif %}
+</section>
 
 <!-- Bitácora -->
-<div class="card">
-  <h2>Bitácora</h2>
-  <div class="scroll"><table>
+<section class="card" aria-labelledby="h-log">
+  <div class="card-head"><h2 id="h-log">Bitácora</h2><span class="muted">Últimos 30 movimientos</span></div>
+  {% if logs %}
+  <div class="scroll"><table class="log">
+    <tbody>
     {% for e in logs %}
-    <tr><td class="muted" style="white-space:nowrap">{{ e.at|dt }}</td><td class="{{ 'err' if e.level == 'error' }}">{{ e.message }}{% if e.detail %}<div class="muted">{{ e.detail }}</div>{% endif %}</td></tr>
-    {% else %}<tr><td class="muted">Sin actividad.</td></tr>{% endfor %}
+    <tr><td class="num">{{ e.at|dt }}</td>
+      <td>{% if e.level == 'error' %}<span class="pill error" style="margin-right:6px">error</span>{% endif %}{{ e.message }}{% if e.detail %}<div class="muted">{{ e.detail }}</div>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
   </table></div>
-</div>
+  {% else %}<div class="empty"><svg class="icon" aria-hidden="true"><use href="#i-inbox"/></svg>Sin actividad.</div>{% endif %}
+</section>
 {% endblock %}

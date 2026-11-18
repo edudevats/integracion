@@ -1,17 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Entrar · Ventas a Meta{% endblock %}
 {% block content %}
-<div class="card" style="max-width:380px;margin:60px auto">
-  <h2>Ventas Leadsales → Meta</h2>
-  <p class="muted">Inicia sesión para administrar la integración.</p>
-  {% if missing %}<div class="flash error">Falta APP_PASSWORD en el archivo .env</div>{% endif %}
-  <form method="post">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label for="u">Usuario</label>
-    <input id="u" name="username" autocomplete="username" required autofocus>
-    <label for="p">Contraseña</label>
-    <input id="p" name="password" type="password" autocomplete="current-password" required>
-    <div class="row"><button class="primary" type="submit">Entrar</button></div>
-  </form>
+<div class="auth">
+  <div class="brand">
+    <span class="brand-mark"><svg class="icon"><use href="#i-pulse"/></svg></span>
+    <span><b>Ventas → Meta</b><small>Leadsales · API de conversiones</small></span>
+  </div>
+  <div class="card">
+    <h1 style="font-size:20px">Iniciar sesión</h1>
+    <p class="muted" style="margin-top:4px">Administra la integración de ventas con Meta.</p>
+    {% if missing %}<div class="flash error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg><div>Falta APP_PASSWORD en el archivo .env</div></div>{% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <div class="field"><label for="u">Usuario</label>
+        <input id="u" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></div>
+      <div class="field"><label for="p">Contraseña</label>
+        <div class="pw"><input id="p" name="password" type="password" autocomplete="current-password" required><button type="button" aria-label="Mostrar" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button></div></div>
+      <div class="actions"><button class="primary" type="submit" style="width:100%" data-busy="Entrando…">Entrar</button></div>
+    </form>
+  </div>
 </div>
 {% endblock %}

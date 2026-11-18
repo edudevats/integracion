@@ -2,29 +2,38 @@
 {% set nav = "clientes" %}
 {% block title %}Clientes enviados · Ventas a Meta{% endblock %}
 {% block content %}
-<div class="card">
-  <h2>Clientes enviados a Facebook</h2>
-  <p class="muted">{{ totals.clients }} clientes y {{ totals.n }} ventas enviadas
-    (${{ '{:,.2f}'.format(totals.total) }}, sin contar pruebas).</p>
-  <form method="get" action="/clientes">
-    <div class="row">
-      <div><label for="q">Buscar por nombre, teléfono, correo o producto</label>
-        <input id="q" name="q" value="{{ q }}" placeholder="Ej. Ana o 5512"></div>
-      <div><label for="estado">Estado</label>
+<div class="page-head">
+  <div>
+    <h1>Clientes enviados a Facebook</h1>
+    <p><b class="num">{{ '{:,}'.format(totals.clients) }}</b> clientes · <b class="num">{{ '{:,}'.format(totals.n) }}</b> ventas ·
+      <b class="num">${{ '{:,.2f}'.format(totals.total) }}</b> <span class="muted">(sin contar pruebas)</span></p>
+  </div>
+</div>
+
+<section class="card" aria-label="Filtros">
+  <form method="get" action="/clientes" role="search">
+    <div class="row" style="margin-top:0">
+      <div class="grow"><label for="q">Buscar</label>
+        <input id="q" name="q" type="search" value="{{ q }}" placeholder="Ej. Ana o 5512" aria-describedby="q-h">
+        <span class="hint" id="q-h">Nombre, teléfono, correo o producto.</span></div>
+      <div style="flex:0 1 180px"><label for="estado">Estado</label>
         <select id="estado" name="estado">
           <option value="" {% if not status %}selected{% endif %}>Todos</option>
           <option value="enviado" {% if status == 'enviado' %}selected{% endif %}>Enviado</option>
           <option value="omitido" {% if status == 'omitido' %}selected{% endif %}>Omitido</option>
           <option value="error" {% if status == 'error' %}selected{% endif %}>Error</option>
         </select></div>
-      <button class="primary" type="submit">Filtrar</button>
-      <button type="submit" name="formato" value="csv">Descargar CSV</button>
+      <button class="primary" type="submit"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>Filtrar</button>
+      <button type="submit" name="formato" value="csv"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>CSV</button>
     </div>
+    {% if q or status %}<p class="muted" style="margin:10px 0 0">Filtro activo · <a href="/clientes">Quitar filtros</a></p>{% endif %}
   </form>
-</div>
-<div class="card">
+</section>
+
+<section class="card" aria-labelledby="h-res">
+  <div class="card-head"><h2 id="h-res">Resultados</h2><span class="muted num" aria-live="polite">{{ rows|length }} registros</span></div>
   {% if rows %}{% include "_sales_table.html" %}
-  <p class="muted">{{ rows|length }} registros.</p>
-  {% else %}<p class="muted">No hay registros{% if q or status %} con ese filtro{% endif %}.</p>{% endif %}
-</div>
+  {% else %}<div class="empty"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+    No hay registros{% if q or status %} con ese filtro. <a href="/clientes">Ver todos</a>{% else %}.{% endif %}</div>{% endif %}
+</section>
 {% endblock %}

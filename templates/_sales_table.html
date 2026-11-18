@@ -1,14 +1,16 @@
-<div class="scroll"><table>
-  <tr><th>Fecha de venta</th><th>Cliente</th><th>Teléfono</th><th>Monto</th><th>Qué</th><th>Estado</th></tr>
+<div class="scroll"><table class="stack">
+  <thead><tr><th scope="col">Fecha de venta</th><th scope="col">Cliente</th><th scope="col">Teléfono</th><th scope="col" class="amount">Monto</th><th scope="col">Qué</th><th scope="col">Estado</th></tr></thead>
+  <tbody>
   {% for s in rows %}
   <tr>
-    <td style="white-space:nowrap">{{ s.event_time|dt }}</td>
-    <td>{{ s.client_name or '—' }}{% if s.manual %} <span class="muted">(manual)</span>{% endif %}{% if s.test %} <span class="muted">(prueba)</span>{% endif %}</td>
-    <td style="white-space:nowrap">{{ s.phone or '—' }}</td>
-    <td style="white-space:nowrap">${{ '{:,.2f}'.format(s.amount) }} {{ s.currency }}</td>
-    <td>{{ s.what_sold or '—' }}</td>
-    <td><span class="pill {{ s.status }}">{{ s.status }}</span>
-      {% if s.status != 'enviado' %}<div class="muted">{{ s.detail }}</div>{% endif %}</td>
+    <td data-label="Fecha" class="nowrap num">{{ s.event_time|dt }}</td>
+    <td data-label="Cliente"><span>{{ s.client_name or '—' }}{% if s.manual %} <span class="tag">manual</span>{% endif %}{% if s.test %} <span class="tag">prueba</span>{% endif %}</span></td>
+    <td data-label="Teléfono" class="nowrap num">{{ s.phone or '—' }}</td>
+    <td data-label="Monto" class="amount"><span>${{ '{:,.2f}'.format(s.amount) }} <span class="muted">{{ s.currency }}</span></span></td>
+    <td data-label="Qué">{{ s.what_sold or '—' }}</td>
+    <td data-label="Estado"><span><span class="pill {{ s.status }}">{{ s.status|capitalize }}</span>
+      {% if s.status != 'enviado' and s.detail %}<div class="muted">{{ s.detail }}</div>{% endif %}</span></td>
   </tr>
   {% endfor %}
+  </tbody>
 </table></div>
